@@ -35,6 +35,8 @@ type CorpusReport = {
   requestId?: string
   environment?: EnvironmentFingerprint
   corpusId?: string
+  sliceStart?: number | null
+  sliceEnd?: number | null
   title?: string
   language?: string
   direction?: string
@@ -181,6 +183,8 @@ const diagnosticMode = params.get('diagnostic') ?? 'light'
 const requestedDiagnosticMethod = params.get('method')
 const requestedFont = params.get('font')
 const requestedLineHeight = Number.parseInt(params.get('lineHeight') ?? '', 10)
+const requestedSliceStart = Number.parseInt(params.get('sliceStart') ?? '', 10)
+const requestedSliceEnd = Number.parseInt(params.get('sliceEnd') ?? '', 10)
 
 const reportEl = document.createElement('pre')
 reportEl.id = 'corpus-report'
@@ -222,6 +226,8 @@ let corpusList: CorpusMeta[] = []
 let currentMeta: CorpusMeta | null = null
 let currentText = ''
 let currentPrepared: PreparedTextWithSegments | null = null
+let currentSliceStart: number | null = null
+let currentSliceEnd: number | null = null
 
 function withRequestId<T extends CorpusReport>(report: T): CorpusReport {
   return requestId === undefined ? report : { ...report, requestId }
@@ -630,6 +636,20 @@ function updateTitle(meta: CorpusMeta): void {
   document.documentElement.dir = getDirection(meta)
 }
 
+function getRequestedSlice(normalizedLength: number): { start: number | null, end: number | null } {
+  const hasSliceStart = Number.isFinite(requestedSliceStart)
+  const hasSliceEnd = Number.isFinite(requestedSliceEnd)
+  if (!hasSliceStart && !hasSliceEnd) {
+    return { start: null, end: null }
+  }
+
+  const rawStart = hasSliceStart ? requestedSliceStart : 0
+  const rawEnd = hasSliceEnd ? requestedSliceEnd : normalizedLength
+  const start = Math.max(0, Math.min(normalizedLength, rawStart))
+  const end = Math.max(start, Math.min(normalizedLength, rawEnd))
+  return { start, end }
+}
+
 function configureControls(meta: CorpusMeta): void {
   slider.min = String(meta.min_width ?? 300)
   slider.max = String(meta.max_width ?? 900)
@@ -656,6 +676,8 @@ function buildReadyReport(
     status: 'ready',
     environment: getEnvironmentFingerprint(),
     corpusId: meta.id,
+    sliceStart: currentSliceStart,
+    sliceEnd: currentSliceEnd,
     title: meta.title,
     language: meta.language,
     direction: getDirection(meta),
@@ -872,7 +894,7 @@ async function loadText(meta: CorpusMeta): Promise<string> {
 
 async function loadCorpus(meta: CorpusMeta): Promise<void> {
   currentMeta = meta
-  currentText = await loadText(meta)
+  const rawText = await loadText(meta)
 
   updateTitle(meta)
   configureControls(meta)
@@ -881,6 +903,24 @@ async function loadCorpus(meta: CorpusMeta): Promise<void> {
   const font = buildFont(meta)
   const lineHeight = getLineHeight(meta)
   const direction = getDirection(meta)
+
+  if ('fonts' in document) {
+    await document.fonts.ready
+  }
+
+  const fullPrepared = prepareWithSegments(rawText, font)
+  const fullNormalizedText = fullPrepared.segments.join('')
+  const requestedSlice = getRequestedSlice(fullNormalizedText.length)
+
+  currentSliceStart = requestedSlice.start
+  currentSliceEnd = requestedSlice.end
+  currentText = requestedSlice.start === null
+    ? fullNormalizedText
+    : fullNormalizedText.slice(requestedSlice.start, requestedSlice.end ?? fullNormalizedText.length)
+  currentPrepared = requestedSlice.start === null
+    ? fullPrepared
+    : prepareWithSegments(currentText, font)
+  diagnosticDiv.textContent = currentPrepared.segments.join('')
 
   book.textContent = currentText
   book.lang = meta.language
@@ -898,13 +938,6 @@ async function loadCorpus(meta: CorpusMeta): Promise<void> {
   lineProbeDiv.style.padding = `${PADDING}px`
   lineProbeDiv.lang = meta.language
   lineProbeDiv.dir = direction
-
-  if ('fonts' in document) {
-    await document.fonts.ready
-  }
-
-  currentPrepared = prepareWithSegments(currentText, font)
-  diagnosticDiv.textContent = currentPrepared.segments.join('')
   setWidth(getInitialWidth(meta))
 }
 

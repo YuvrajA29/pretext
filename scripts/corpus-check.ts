@@ -19,6 +19,8 @@ type CorpusOverrideOptions = {
   font: string | null
   lineHeight: number | null
   method: 'span' | 'range' | null
+  sliceStart: number | null
+  sliceEnd: number | null
 }
 
 type CorpusReport = {
@@ -44,6 +46,8 @@ type CorpusReport = {
     }
   }
   corpusId?: string
+  sliceStart?: number | null
+  sliceEnd?: number | null
   title?: string
   width?: number
   predictedHeight?: number
@@ -172,6 +176,12 @@ function appendOverrideParams(url: string, overrides: CorpusOverrideOptions): st
   if (overrides.method !== null) {
     nextUrl += `&method=${encodeURIComponent(overrides.method)}`
   }
+  if (overrides.sliceStart !== null) {
+    nextUrl += `&sliceStart=${overrides.sliceStart}`
+  }
+  if (overrides.sliceEnd !== null) {
+    nextUrl += `&sliceEnd=${overrides.sliceEnd}`
+  }
   return nextUrl
 }
 
@@ -192,6 +202,9 @@ function printReport(report: CorpusReport): void {
   console.log(
     `width ${width}: diff ${diff > 0 ? '+' : ''}${diff}px | height ${predicted}/${actual} | lines ${lines}`,
   )
+  if (report.sliceStart !== undefined || report.sliceEnd !== undefined) {
+    console.log(`  slice: ${report.sliceStart ?? 0}-${report.sliceEnd ?? '-'}`)
+  }
   if (report.maxLineWidthDrift !== undefined) {
     console.log(`  max line width drift: ${report.maxLineWidthDrift.toFixed(3)}px`)
   }
@@ -257,6 +270,8 @@ const overrideOptions: CorpusOverrideOptions = {
   font: parseStringFlag('font'),
   lineHeight: parseOptionalNumberFlag('lineHeight'),
   method: requestedMethod as 'span' | 'range' | null,
+  sliceStart: parseOptionalNumberFlag('sliceStart'),
+  sliceEnd: parseOptionalNumberFlag('sliceEnd'),
 }
 const sources = await loadSources()
 const id = parseStringFlag('id')
